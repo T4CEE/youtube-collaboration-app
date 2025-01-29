@@ -1,70 +1,70 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React from "react";
+import { useQuery } from "@tanstack/react-query";
 
 const Dashboard = () => {
-  const [videos, setVideos] = useState([]);
-  const navigate = useNavigate();
+  const fetchVideos = async () => {
+    const response = await fetch("http://localhost:5000/dashboard", {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch dashboard videos");
+    }
+    return response.json();
+  };
 
-  useEffect(() => {
-    const fetchVideos = async () => {
-      try {
-        const token = localStorage.getItem('token');
+  const {
+    data: videos,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["dashboardVideos"],
+    queryFn: fetchVideos,
+  });
 
-        const response = await fetch('http://localhost:5000/dashboard', {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch videos');
-        }
-
-        const data = await response.json();
-
-        const sortedVideos = data.sort(
-          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-        );
-
-        setVideos(sortedVideos);
-
-      } catch (error) {
-        console.error('Error fetching videos:', error);
-      }
-    };
-
-    fetchVideos();
-  }, []);
+  if (isLoading) return <div>Loading videos...</div>;
+  if (error) return <div>Error fetching videos: {error.message}</div>;
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">My Dashboard</h2>
-      {videos.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {videos.map((video) => (
-            <div key={video._id} className="border p-4 rounded">
-              <iframe
-                width="100%"
-                height="200"
-                src={`https://www.youtube.com/embed/${new URL(video.url).searchParams.get('v')}`}
-                title="YouTube Video"
-                allowFullScreen
-              />
-              <button
-                className="mt-2 bg-green-500 text-white p-2 rounded"  
-                onClick={() => navigate(`/video/${video._id}`)}
-              >
-                Open
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p>No videos yet</p>
-      )}
+      <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
+      <div className="grid gap-4">
+        {videos.map((video) => (
+          <div
+            key={video._id}
+            className="p-4 border rounded bg-white shadow-md"
+          >
+            <a
+              href={video.isPlaylist ? `/savedplaylist/${encodeURIComponent(video.url)}` : `/savedvideo/${encodeURIComponent(video.url)}`}
+              className="text-blue-500 underline"
+            >
+              {video.isPlaylist ? "View Playlist" : "View Video"}
+            </a>
+            <iframe
+            width="560"
+            height="315"
+            src={`https://www.youtube.com/embed/${video.url}`}
+            title={video.title || video.url}
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          ></iframe>
+            <p className="mt-2">{video.url}</p>
+            <p className="mt-2">{video.collaborators}</p>
+            {video.isPlaylist && (
+              <ul className="mt-2">
+                {video.videos?.slice(0, 3).map((v, idx) => (
+                  <li key={idx} className="text-gray-600 text-sm">
+                    {v.title}
+                  </li>
+                ))}
+                {video.videos?.length > 3 && (
+                  <li className="text-gray-500 text-sm italic">...and more</li>
+                )}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

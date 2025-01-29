@@ -38,7 +38,7 @@ const VideoPlayer = () => {
       <iframe
         width="100%"
         height="400"
-        src={`https://www.youtube.com/embed/${new URL(url).searchParams.get('v')}`}
+        src={`https://www.youtube.com/embed/${new URL(video.url).searchParams.get('v')}?enablejsapi=1&rel=0&modestbranding=1`}
         title="YouTube Video"
         allowFullScreen
       />

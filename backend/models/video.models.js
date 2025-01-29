@@ -1,12 +1,12 @@
 import mongoose from 'mongoose';
-import commentSchema from './comment.model.js';
+import commentSchema from './comment.model.js'
 
 const videoSchema = new mongoose.Schema({
   url: { type: String, required: true },
-  email: { type: String, ref: 'User', required: true },
-  collaborators: [{ type: String, ref: 'User' }],
+  email: { type: String, required: true },
+  isPlaylist: { type: Boolean, default: false },
+  collaborators: [{ type: String }],
   comments: [commentSchema],
-  createdAt: { type: Date, default: Date.now },
 });
 
 const Video = mongoose.model('Video', videoSchema);

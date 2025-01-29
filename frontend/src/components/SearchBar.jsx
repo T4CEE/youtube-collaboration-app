@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from 'react-router-dom';
 
 const SearchBar = () => {
   const [url, setUrl] = useState('');
   const [videoId, setVideoId] = useState(null);
+  const [urlType, setUrlType] = useState(null); 
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const extractVideoId = (youtubeUrl) => {
     const urlPattern = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
@@ -12,16 +15,47 @@ const SearchBar = () => {
     return match ? match[1] : null;
   };
 
-  const handlePreview = () => {
-    const id = extractVideoId(url);
-    if (id) {
-      setVideoId(id);
-    } else {
-      alert('Please enter a valid YouTube URL');
+  const checkUrlType = (youtubeUrl) => {
+    try {
+      const parsedUrl = new URL(youtubeUrl);
+      if (parsedUrl.searchParams.has('list')) {
+        return 'playlist';
+      } else if (parsedUrl.searchParams.has('v')) {
+        return 'video';
+      } else {
+        return 'unknown';
+      }
+    } catch (e) {
+      return 'invalid';
     }
   };
 
-  // UseMutation to handle saving the video
+  const handlePreview = () => {
+    const type = checkUrlType(url);
+    setUrlType(type);
+
+    if (type === 'video') {
+      const id = extractVideoId(url);
+      if (id) {
+        setVideoId(id);
+        navigate('/newvideo', { state: { videoId: id, url } });
+      } else {
+        alert('Please enter a valid YouTube video URL');
+      }
+    } else if (type === 'playlist') {
+      const listId = new URL(url).searchParams.get('list');
+      if (listId) {
+        navigate('/playlist', { state: { playlistId: listId, url } });
+      } else {
+        alert('Please enter a valid YouTube playlist URL');
+      }
+    } else if (type === 'invalid') {
+      alert('Please enter a valid YouTube URL');
+    } else {
+      alert('Unknown URL type');
+    }
+  };
+
   const saveVideoMutation = useMutation({
     mutationFn: async (url) => {
       const res = await fetch("http://localhost:5000/video", {
@@ -47,6 +81,7 @@ const SearchBar = () => {
       alert("Video saved successfully!");
       setUrl('');
       setVideoId(null);
+      setUrlType(null);
       queryClient.invalidateQueries(["video"]);
     },
     onError: (error) => {
@@ -55,13 +90,6 @@ const SearchBar = () => {
     },
   });
 
-  const handleSave = () => {
-    if (!videoId) {
-      alert("Preview the video before saving");
-      return;
-    }
-    saveVideoMutation.mutate(url);
-  };
 
   return (
     <div className="p-4">
@@ -79,28 +107,7 @@ const SearchBar = () => {
         >
           Preview
         </button>
-        <button
-          onClick={handleSave}
-          className="bg-blue-500 text-white p-2 rounded"
-          disabled={saveVideoMutation.isLoading}
-        >
-          {saveVideoMutation.isLoading ? "Saving..." : "Save"}
-        </button>
       </div>
-
-      {videoId && (
-        <div className="mt-4">
-          <iframe
-            width="560"
-            height="315"
-            src={`https://www.youtube.com/embed/${videoId}`}
-            title="YouTube video"
-            frameBorder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          ></iframe>
-        </div>
-      )}
     </div>
   );
 };

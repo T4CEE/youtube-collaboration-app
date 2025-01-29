@@ -28,11 +28,17 @@ connectMongoDB();
 
 const PORT = process.env.PORT || 5000;
 
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
+// console.log(YOUTUBE_API_KEY, 'i am key');
+
+
+
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
     throw new Error('Missing JWT_SECRET in environment variables');
 }
+
 
 app.post('/register', async (req, res) => {
     const { name, email, password } = req.body;
@@ -146,49 +152,130 @@ app.get('/user', async (req, res) => {
 });
 
 
+
 app.post('/video', authMiddleware, async (req, res) => {
   const { url } = req.body;
   const userEmail = req.user.email;
-  console.log("my email", userEmail);
-  
+
+  const youtubeVideoRegex = /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=([^&]+)/;
+  const youtubePlaylistRegex = /^(https?:\/\/)?(www\.)?youtube\.com\/.*[?&]list=([^&]+)/;
 
   try {
-    const youtubeRegex = /^https:\/\/www\.youtube\.com\/watch\?v=/;
-    if (!youtubeRegex.test(url)) {
+    if (!youtubeVideoRegex.test(url) && !youtubePlaylistRegex.test(url)) {
       return res.status(400).json({ message: 'Invalid YouTube URL' });
     }
 
-    const existingVideo = await Video.findOne({ url, email: userEmail });
-    console.log("video already exist", existingVideo)
-    if (existingVideo) {
-      return res.status(409).json({ message: 'Video already exists' });
+    const isPlaylist = youtubePlaylistRegex.test(url);
+
+    const existingEntry = await Video.findOne({ url, email: userEmail });
+    if (existingEntry) {
+      return res.status(409).json({ message: 'This video/playlist already exists' });
     }
 
-    const video = new Video({ url, email: userEmail });
+    const video = new Video({ url, email: userEmail, isPlaylist });
     await video.save();
 
-    res.status(201).json({ message: 'Video saved successfully', video });
+    res.status(201).json({ message: 'Video/Playlist saved successfully', video });
   } catch (error) {
-    console.error('Error saving video:', error);
-    res.status(500).json({ message: 'Error saving video', error });
+    console.error('Error saving video/playlist:', error);
+    res.status(500).json({ message: 'Error saving video/playlist', error });
   }
 });
 
-  
-  app.get('/dashboard', authMiddleware, async (req, res) => {
-    const userEmail = req.user.email;
-  
-    try {
-      const videos = await Video.find({
-        $or: [{ email: userEmail }, { collaborators: userEmail }],
-      }).populate('comments.email', 'name email');
-  
-      res.status(200).json(videos);
-    } catch (error) {
-      console.error('Error fetching dashboard videos:', error);
-      res.status(500).json({ message: 'Error fetching dashboard videos', error });
+app.get("/video", authMiddleware, async (req, res) => {
+  const { url } = req.query;
+  const userEmail = req.user.email;
+
+  try {
+    const youtubePlaylistRegex = /[?&]list=([^&]+)/;
+    const playlistIdMatch = url.match(youtubePlaylistRegex);
+
+    if (playlistIdMatch) {
+      const playlistId = playlistIdMatch[1];
+
+      const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=50&key=${YOUTUBE_API_KEY}`;
+      const response = await fetch(youtubeApiUrl);
+if (!response.ok) {
+  console.error("YouTube API error:", await response.text());
+  throw new Error("Failed to fetch YouTube playlist");
+}
+const data = await response.json();
+
+if (!data.items) {
+  throw new Error("Invalid YouTube API response. No items found.");
+}
+      // const { data } = await fetch(youtubeApiUrl);
+
+      const videos = data.items.map((item) => ({
+        url: `https://www.youtube.com/watch?v=${item.snippet.resourceId.videoId}`,
+        title: item.snippet.title,
+      }));
+
+      const playlist = await Video.findOne({ url, email: userEmail });
+
+      if (!playlist) {
+        return res.status(404).json({ message: "Playlist not found" });
+      }
+
+      res.json({
+        video: playlist,
+        videos,
+        collaborators: playlist.collaborators,
+        comments: playlist.comments,
+      });
+    } else {
+
+      const video = await Video.findOne({ url, email: userEmail });
+
+      if (!video) {
+        return res.status(404).json({ message: "Video not found" });
+      }
+
+      res.json({
+        video,
+        videos: [],
+        collaborators: video.collaborators,
+        comments: video.comments,
+      });
     }
-  });
+  } catch (error) {
+    console.error("Error fetching playlist:", error);
+    res.status(500).json({ message: "Error fetching playlist", error });
+  }
+});
+
+
+app.get('/dashboard', authMiddleware, async (req, res) => {
+  const userEmail = req.user.email;
+
+  try {
+    const videos = await Video.find({
+      $or: [{ email: userEmail }, { collaborators: userEmail }],
+    }).populate('comments.email', 'name email');
+
+    res.status(200).json(videos);
+  } catch (error) {
+    console.error('Error fetching dashboard videos:', error);
+    res.status(500).json({ message: 'Error fetching dashboard videos', error });
+  }
+});
+
+app.get('/savedplaylist', authMiddleware, async (req, res) => {
+  const userEmail = req.user.email;
+
+  try {
+    const playlists = await Video.find({
+      email: userEmail,
+      isPlaylist: true,
+    }).populate('comments.email', 'name email');
+
+    res.status(200).json(playlists);
+  } catch (error) {
+    console.error('Error fetching playlists:', error);
+    res.status(500).json({ message: 'Error fetching playlists', error });
+  }
+});
+
   
 
   app.get('/video/:id', authMiddleware, async (req, res) => {
@@ -213,32 +300,6 @@ app.post('/video', authMiddleware, async (req, res) => {
     }
   });
 
-
-  app.post('/video/:id/comment', async (req, res) => {
-    const { id } = req.params;
-    const { text } = req.body;
-    const userId = req.user.id;
-  
-    try {
-      const video = await Video.findById(id);
-  
-      if (!video) {
-        return res.status(404).json({ message: 'Video not found' });
-      }
-  
-      if (video.owner.toString() !== userId && !video.collaborators.includes(userId)) {
-        return res.status(403).json({ message: 'You do not have access to comment on this video' });
-      }
-  
-      video.comments.push({ user: userId, text });
-      await video.save();
-  
-      res.status(201).json({ message: 'Comment added successfully' });
-    } catch (error) {
-      console.error('Error adding comment:', error);
-      res.status(500).json({ message: 'Error adding comment', error });
-    }
-  });
   
   
 

@@ -36,7 +36,7 @@ const VideoDetails = () => {
       <div className="flex-1">
         <iframe
           className="w-full h-64 md:h-96 rounded-md shadow-lg"
-          src={`https://www.youtube.com/embed/${new URL(video.url).searchParams.get('v')}`}
+          src={`https://www.youtube.com/embed/${new URL(video.url).searchParams.get('v')}?enablejsapi=1&rel=0&modestbranding=1`}
           title={video.title}
           allowFullScreen
         />
